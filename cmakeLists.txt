@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 2.0)
+project(cproject)
+set(CMAKE_CXX_STANDARD 17)  # 或者 20
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(COMMAND cmake_policy)
+    cmake_policy(SET CMP0003 NEW)
+endif(COMMAND cmake_policy)
+set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/build)
+set(CMAKE_PREFIX_PATH "./external/lib" ${CMAKE_PREFIX_PATH})
+
+set(CMAKE_BUILD_TYPE Debug)
+#头文件
+include_directories( ./include ./external/include)
+#源文件
+aux_source_directory(./src SRC_LIST1)
+
+#设置可执行文件路径
+set(EXECUTABLE_OUTPUT_PATH ./output)
+#可执行文件
+add_subdirectory(OpenXLSX)
+add_executable(main ${SRC_LIST1} )
+target_link_libraries(main OpenXLSX::OpenXLSX)
