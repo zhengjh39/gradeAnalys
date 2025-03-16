@@ -28,7 +28,190 @@ public:
     }
 };
 
-void load(OpenXLSX::XLWorksheet wks, vector<Student> & students){
+class Lecture{
+public:
+    string name;
+    vector<float> pivots = {1000};
+    float pass;
+    float avg = 0;
+    float _max = 0;
+    float _min = 150;
+    float num = 0;
+    void getPivots(vector<Student>& students){
+        vector<float> scores;
+        float _sum = 0;
+        for(auto&s:students){
+            if(s.has(name)){
+                float score = s.get(name);
+                if(score > _max) _max = score;
+                if(score < _min) _min = score;
+                _sum += score;
+                scores.push_back(score);
+            }
+        }
+        int c = scores.size();
+        num = c;
+        if(c > 0) avg = _sum/c;
+        sort(scores.begin(), scores.end(), std::greater<int>());
+        for(int i = 1; i < 10; i ++){
+            pivots.push_back(scores[int(i * 0.1 * c)]);
+        }
+        pivots.push_back(0);
+
+        set<string> s1 = {"语文", "数学", "英语"};
+        if(s1.find(name) != s1.end()) pass = 90;
+        else if(name == "历史总分" || name == "物理总分") pass = 450;
+        else if(name == "语数英") pass = 270;
+        else pass = 60;
+    }
+};
+class Klass{
+public:
+    int id;
+    vector<Student*> students;
+    map<string, map<string, float> > info;
+    bool has(string course){
+        return students.size() > 0 &&
+               students[0]->has(course);
+    }
+    bool has(string course, string field){
+        return info.find(course) != info.end() 
+        && info[course].find(field)!= info[course].end();
+    }
+    void setInfo(string course, string field, float s){
+        if(info.find(course) == info.end()){
+            info[course] = map<string, float>();
+        }
+        info[course][field] = s;
+    }
+    void getNum(const string course, string field = "与考人数"){
+        int c = 0;
+        for(auto &s: students){
+            if(s->has(course)) c+=1;
+        }
+        if(c!=0) setInfo(course, field, c);
+    }
+    void getMax(string course, string field = "最高分"){
+        float c = 0;
+        for(auto &s: students){
+            if(s->has(course) && s->get(course) > c) c = s->get(course);
+        }
+        if(c!=0) setInfo(course, field, c);
+    }
+    void getMin(string course, string field = "最低分"){
+        float c = 1000;
+        for(auto &s: students){
+            if(s->has(course) && s->get(course) < c) c = s->get(course);
+        }
+        if(c!=1000) setInfo(course, field, c);
+    }
+    void rangeCount(string course, int a, int b, string field = "", bool rate = false){
+        if(field.size() == 0) field = to_string(a) +"-" + to_string(b);
+        int c = 0;
+        float c2 = 0;
+        for(auto &s: students){
+            if(s->has(course)){
+                c2 += 1;
+                float score = s->get(course);
+                if(score >= a && score <b) c += 1;
+            }
+        }
+        if(!rate) setInfo(course, field, c);
+        else setInfo(course, field, c/c2);
+        //cout << field<< ' ' << c << endl;
+    }
+    void getAvg(string course, string field = "平均分"){
+        int c = 0;
+        float _sum = 0;
+        for(auto &s: students){
+            if(s->has(course)){
+                c += 1;
+                _sum += s->get(course);
+            }
+        }
+        if(c > 0) setInfo(course, field, _sum/c);
+    }
+
+    void prepare(map<string, Lecture> &lecture){
+        vector<string> courses = {"语文","数学","英语",
+                            "物理","历史",
+                            "化学","地理","政治", "生物","语数英",
+                            "历史总分", "物理总分"};
+        for(auto &course: courses){
+            getNum(course);
+            getMax(course);
+            getMin(course);
+            getAvg(course);
+            float t = info[course]["平均分"] - lecture[course].avg;
+            setInfo(course, "均分差", t);
+            auto pivot = lecture[course].pivots;
+            rangeCount(course, pivot[1], 1000, "前10%");
+            for(int i = 1; i <= 5; i++){
+                string filed = to_string(i * 10) + "% - "+ to_string(i* 10 + 10) + "%";
+                rangeCount(course, pivot[i + 1], pivot[i], filed);
+            }
+            rangeCount(course, 0, pivot[6], "后60%");
+            rangeCount(course, lecture[course].pass, 1000, "及格率", true);
+            rangeCount(course, pivot[1], 1000, "优秀率", true);
+        }
+    }
+};
+
+void getRank(vector<Student>& students, string course, string key){
+    vector<Student *> _students;
+    for(auto &s : students){
+        if(s.has(course)) _students.push_back(&s);
+    }
+    stable_sort(_students.begin(), _students.end(), [&](Student* a, Student* b) {
+        return a->get(course) > b->get(course);
+    });
+    for(int i = 0; i < _students.size(); i++){
+        if(i > 0 && _students[i]->info[course] == _students[i - 1]->info[course]){
+            _students[i]->info[key] = _students[i -1]->info[key];
+        }
+        else
+            _students[i]->info[key] = i + 1;
+    }
+}
+void assignScore(vector<Student>& _students, string course){
+    vector<Student*> students;
+    for(auto &s: _students){
+        if(s.has(course)) students.push_back(&s);
+    }
+    vector<vector<float> > area= {{100, 86}, {85, 71}, {70,56}, {55, 41}, {40, 30}};
+    vector<vector<float> > origin(area.size(), {-1, 1000});
+    vector<float> p = {0, 0.15, 0.5, 0.85, 0.98, 1.1};
+    stable_sort(students.begin(), students.end(), 
+        [&](Student *a, Student *b){
+            return a->get(course) > b->get(course);
+        });
+    int i = 0, n = students.size();
+    int j = 0;
+    for(auto &s: students){
+        float t = float(i)/n;
+        while(!(t>= p[j] && t < p[j + 1])){j += 1;}
+
+        float score = s->get(course);
+        if(score > origin[j][0]) origin[j][0] = score;
+        if(score < origin[j][1]) origin[j][1] = score;
+        i += 1;
+    }
+    for(auto &s: students){
+        float score = s->get(course);
+        for(int i = 0; i < origin.size(); i ++){
+            if(score >= origin[i][1] && score <= origin[i][0]){
+                float a = origin[i][0];
+                float b = origin[i][1];
+                float m = area[i][0];
+                float n = area[i][1];
+                s->info[course] = n + (score - b)/(a - b) * (m - n);
+                break;
+            }
+        }
+    }
+}
+void load(OpenXLSX::XLWorksheet wks, vector<Student> & students, 
+        map<string, Lecture>& lecture, vector<Klass> &klass, int type = 1){
     int ncol = wks.columnCount(), nrow = wks.rowCount();
     vector<string> header;
     for (int j = 1; j <= ncol; j++)
@@ -50,115 +233,83 @@ void load(OpenXLSX::XLWorksheet wks, vector<Student> & students){
         }
         if(s.strInfo.size() > 0) students.push_back(s);
     }
+    if(type == 2){
+        vector<string> biC = {"化学", "地理", "政治", "生物"};
+        for(auto &course: biC) assignScore(students, course);
+    }
+    map<int, int> klassIds;
+    for(auto &s: students){
+        s.info["语数英"] = s.get("语文") +s.get("数学") + s.get("英语");
+        s.info["副科"] = s.get("化学") + s.get("地理") + s.get("政治")+ s.get("生物");
+        if(s.has("历史")){
+            s.info["历史总分"] = s.get("语数英") + s.get("副科") + s.get("历史");
+        }
+        if(s.has("物理")){
+            s.info["物理总分"] = s.get("语数英") + s.get("副科") + s.get("物理");
+        }
+        int id = s.get("班级");
+        if(klassIds.find(id) == klassIds.end()){
+            klassIds[id] = klassIds.size();
+            klass.push_back({id});
+        }
+        klass[klassIds[id]].students.push_back(&s);
+    }
+    vector<string> courses = {"语文","数学","英语",
+                            "物理","历史",
+                            "化学","地理","政治", "生物",
+                            "语数英",
+                            "物理总分", "历史总分"};
+    vector<string> keys = {"语排","数排","英排",
+                            "物排","历排",
+                            "化排","地排","政排", "生排",
+                            "语数英排",
+                            "物类排", "历类排"};
+    for(int i = 0 ; i< courses.size(); i++){
+        getRank(students, courses[i], keys[i]);
+    }
+
+    for(auto &course:courses){
+        Lecture l;
+        l.name = course;
+        l.getPivots(students);
+        lecture[course] = l;
+    }
+    for(auto &k: klass){
+        k.prepare(lecture);
+    }
+    for(auto &course: courses){
+        vector<vector<float>> rank ;
+        for(int i = 0 ;i< klass.size(); i ++){
+            if(klass[i].has(course)) rank.push_back({klass[i].info[course]["平均分"], float(i)});
+            else{
+                rank.push_back({0, float(i)});
+            }
+        }
+        stable_sort(rank.begin(), rank.end(), 
+        [](vector<float> a, vector<float> b){
+            return a > b;
+        });
+        int i = 1;
+        for(auto r: rank){
+            klass[int(r[1])].setInfo(course, "名次", i);
+            i += 1;
+        }
+    }
+    
 }
 
 float format(float a){
     return round(a * 100)/100;
 }
-#include <sstream>
-string formatFloat(float f) {
-    std::ostringstream oss;
-    oss << format(f);  // 默认格式输出，不会固定填充小数位
-    return oss.str();
+double formatFloat(float f) {
+    double a = f;
+    return round(a * 100)/100;
 }
-void Sheet1(OpenXLSX::XLWorksheet wks, vector<Student>& studens, int startRow = 1){
-    vector<string> courses = {"历史总分","物理总分", "语数英", "语文","数学",
-                "英语","物理","历史","化学","地理","政治", "生物"};
-    map<string, vector<float> > lines;
-    lines["语文"] = {90, 120};
-    lines["数学"] = {90, 120};
-    lines["英语"] = {90, 120};
-    lines["英语"] = {90, 120};
-    lines["物理"] = {60, 80};
-    lines["历史"] = {60, 80};
-    lines["化学"] = {40, 60};
-    lines["地理"] = {40, 60};
-    lines["政治"] = {40, 60};
-    lines["生物"] = {40, 60};
-    map<int, int> m;
-    vector<int> _idx;
-    for(auto &s: studens){
-        if(s.has("班级")){
-            int id = s.get("班级");
-            if(m.find(id) == m.end()){
-                _idx.push_back(id);
-                m[id] = m.size();
-            }
-        }
-    }
-    
-    int row = startRow;
-    int col = 1;
-    wks.cell(startRow, 2) = "班级";
-    for(int j = 0; j < m.size(); j++){
-        wks.cell(startRow, j + 3) = _idx[j];
-    }
-    row += 2;
-    for(auto &course: courses){
-        map<string, float> statis;
-        float _min = 200, _max = 0;
-        float sum = 0, count = 0, avg = 0;
-        for(auto &s: studens){
-            if(s.has(course)){
-                float score = s.get(course);
-                if(score < _min) _min = score;
-                if(score > _max) _max = score;
-                sum += score;
-                count += 1;
-            }
-        }
-        if(count > 0) avg = sum / count;
-        vector<vector<float>> klass(m.size(), {0, 0, 0, 0});  // Fixed initialization
-        for(auto &s: studens){
-            if(s.has(course) && s.has("班级")){
-                int id = m[s.get("班级")];
-                float score = s.get(course);
-                klass[id][0] += score;
-                klass[id][1] += 1;
-                if(lines.find(course) != lines.end()){
-                    if(score > lines[course][0]) klass[id][2] += 1;
-                    if(score > lines[course][1]) klass[id][3] += 1;
-                }
-            }
-        }
-        vector<vector<float>> klassAvg;
-        for(int i = 0; i < m.size(); i++){  // Fixed the condition here
-            if(klass[i][1] > 0){
-                klassAvg.push_back({klass[i][0] / klass[i][1], float(i)});
-            }
-            else{
-                klassAvg.push_back({0, float(i)});
-            }
-        }
-        stable_sort(klassAvg.begin(), klassAvg.end(), 
-            [](const vector<float> &d1, const vector<float> &d2){return d1[0] > d2[0]; });
-
-        wks.cell(row, 1) = course;
-        wks.cell(row, 2) = "平均分";
-        wks.cell(row + 1, 2) = "名次";
-        wks.cell(row + 2, 2) = "均分差";
-        
-        if(lines.find(course) != lines.end()){
-            wks.cell(row + 3, 2) = "及格率";
-            wks.cell(row + 4, 2) = "优秀率";
-        }
-        for(int j = 0; j < m.size(); j++){
-            if(klass[j][1] > 0){
-                wks.cell(row , j + 3) = formatFloat(klass[j][0] / klass[j][1]);
-                wks.cell(row + 1, j + 3) = klass[j][2];  // Fixed out-of-bounds error
-                wks.cell(row + 2, j + 3) = formatFloat(klass[j][0] / klass[j][1] - avg);
-
-                if(lines.find(course) != lines.end()){
-                    wks.cell(row + 3, j + 3) = formatFloat(klass[j][2] * 100 / klass[j][1]) + "%";
-                    wks.cell(row + 4, j + 3) = formatFloat(klass[j][3] * 100 / klass[j][1]) + "%";
-                }
-            }
-        }
-        row += 4;
-        if(lines.find(course) != lines.end()){
-            row += 2;
-        }
-    }
+#include <sstream>
+string formatStr(float f) {
+    std::ostringstream oss;
+    oss << f;  // 默认格式输出，不会固定填充小数位
+    return oss.str();
 }
 OpenXLSX::XLWorksheet getSheet(XLDocument &doc, string name){
     auto workbook = doc.workbook();
@@ -168,40 +319,43 @@ OpenXLSX::XLWorksheet getSheet(XLDocument &doc, string name){
     auto wks = doc.workbook().worksheet(name);
     return wks;
 }
-
-                
-void getRank(vector<Student>& students, string course, string key){
-    vector<Student *> _students;
-    for(auto &s : students){
-        if(s.has(course)) _students.push_back(&s);
-    }
-    stable_sort(_students.begin(), _students.end(), [&](Student* a, Student* b) {
-        return a->get(course) > b->get(course);
-    });
-    for(int i = 0; i < _students.size(); i++){
-        if(i > 0 && _students[i]->info[course] == _students[i - 1]->info[course]){
-            _students[i]->info[key] = _students[i -1]->info[key];
-        }
-        else
-            _students[i]->info[key] = i + 1;
-    }
-}
-void Sheet2(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int startRow = 1){
-    vector<Student> students;
-    for(auto &s: _students) {
-        if(s.has("物理")){
-            students.push_back(s);
-        }
-    }
+void Sheet2(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int startRow = 1, int type = 1){
+    
     vector<string> prefix = {"序号","班级","座号","班座","姓名"};
     vector<string> courses = {"语文","数学","英语",
                             "物理",
-                            "化学","地理","政治", "生物",
-                            "物理总分"};
+                            "化学","地理","政治", "生物", 
+                            "语数英"};
     vector<string> keys = {"语排","数排","英排",
                             "物排",
-                            "化排","地排","政排", "生排",
-                            "物类排"};
+                            "化排","地排","政排", "生排", 
+                            "语数英排"};
+    string s1, s2;
+    vector<Student> students;
+    if(type == 1){
+        s1 = "物理总分";
+        s2 = "物类排";
+        for(auto &s: _students) {
+            if(s.has("物理")){
+                students.push_back(s);
+            }
+        }
+    }
+    else{
+        s1 = "历史总分";
+        s2 = "历类排";
+        courses[3] = "历史";
+        keys[3] = "历排";
+        for(auto &s: _students) {
+            if(s.has("历史")){
+                students.push_back(s);
+            }
+        }
+    }
+
+    courses.push_back(s1);
+    keys.push_back(s2);
+
     for(int j = 0; j < prefix.size(); j ++){
         wks.cell(startRow, j + 1) = prefix[j];
     }
@@ -213,7 +367,7 @@ void Sheet2(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int startRow 
         getRank(students, courses[i], keys[i]);
     }
     stable_sort(students.begin(), students.end(), [&](Student a, Student b) {
-        return a.get("物理总分") > b.get("物理总分");
+        return a.get(s1) > b.get(s1);
     });
     for(int i = 0; i < students.size(); i++){
         auto & s = students[i];
@@ -226,245 +380,145 @@ void Sheet2(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int startRow 
         }
         for(int j = 0; j < courses.size(); j ++){
             if(s.has(courses[j])){
-                wks.cell(i + 1 + startRow, 2 * j + 1 + prefix.size()) = s.get(courses[j]);
+                wks.cell(i + 1 + startRow, 2 * j + 1 + prefix.size()) = formatFloat(s.get(courses[j]));
                 wks.cell(i + 1 + startRow, 2 * j + 2 + prefix.size()) = s.get(keys[j]);
             }
         }
     }
 }
-void Sheet3(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int startRow = 1){
-    vector<Student> students;
-    for(auto &s: _students) {
-        if(s.has("历史")){
-            students.push_back(s);
-        }
+void Sheet4(OpenXLSX::XLWorksheet wks, string course, vector<Student>& students, 
+        map<string, Lecture>& lecture, vector<Klass> &klass, int& startRow){
+    vector<string> field = {"与考人数", "平均分", "均分差","名次",
+            "最高分", "最低分", "优秀率", "及格率","前10%"};
+    auto pivots = lecture[course].pivots;
+    for(int i = 1; i <= 5; i++){
+        field.push_back(to_string(i * 10) + "% - "+ to_string(i* 10 + 10) + "%");
     }
-    vector<string> prefix = {"序号","班级","座号","班座","姓名"};
+    field.push_back("后60%");
+    int row = startRow;
+    int col = 1;
+    wks.cell(row, col++) = "班级";
+    for(auto &k: klass){
+        if(k.has(course))
+            wks.cell(row, col++) = k.id;
+    }
+    row += 1;
+    for(auto &f: field){
+        int col = 1;
+        wks.cell(row, col++) = f;
+        for(auto &k : klass){
+            if(k.has(course))
+                if(f == "及格率" || f == "优秀率"){
+                    wks.cell(row, col++) = formatStr(formatFloat(k.info[course][f] * 100)) + "%";
+                }
+                else
+                    wks.cell(row, col++) = formatFloat(k.info[course][f]);
+                
+        }
+        row += 1;
+    }
+}
+void Sheet3(OpenXLSX::XLWorksheet wks, map<string, Lecture>& lecture){
     vector<string> courses = {"语文","数学","英语",
-                            "历史",
-                            "化学","地理","政治", "生物",
-                            "历史总分"};
-    vector<string> keys = {"语排","数排","英排",
-                            "历排",
-                            "化排","地排","政排", "生排",
-                            "历类排"};
+                            "物理","历史",
+                            "化学","地理","政治", "生物","语数英",
+                            "物理总分", "历史总分"};
+    int col = 1;
+    vector<string> field = {"课程", "与考人数", "平均分", "最高分", "最低分", "及格线"};
+    for(int i = 1; i <=9; i++) field.push_back(to_string(i*10));
+    int row = 1;
+    for(auto &f: field) wks.cell(row++, col) = f;
+    col += 1;
+    for(auto &course: courses){
+        int row = 1;
+        wks.cell(row ++, col) = course;
+        auto& l = lecture[course];
+        vector<float> rs = {l.num, l.avg, l._max, l._min, l.pass};
+        for(int i = 1; i <= 9; i ++) rs.push_back(l.pivots[i]);
+        for(auto &r: rs) wks.cell(row++, col) = formatFloat(r);
+        col += 1;
+    }
+
+}
+void Sheet1(OpenXLSX::XLWorksheet wks, vector<Student>& students){
+    vector<string> prefix = {"序号","班级","座号","班座","姓名","语文","数学","英语",
+                            "物理",
+                            "化学","地理","政治", "生物", 
+                            "语数英", "总分"};
+    int startRow = 1;
     for(int j = 0; j < prefix.size(); j ++){
         wks.cell(startRow, j + 1) = prefix[j];
     }
-    for(int j = 0; j < courses.size(); j ++){
-        wks.cell(startRow, 2 * j + 1 + prefix.size()) = courses[j];
-        wks.cell(startRow, 2 * j + 2 + prefix.size()) = keys[j];
-    }
-    for(int i = 0 ; i<courses.size(); i++){
-        getRank(students, courses[i], keys[i]);
-    }
-    stable_sort(students.begin(), students.end(), [&](Student a, Student b) {
-        return a.get("历史总分") > b.get("历史总分");
-    });
+
     for(int i = 0; i < students.size(); i++){
         auto & s = students[i];
         for(int j = 0; j < prefix.size(); j ++){
             if(prefix[j] == "姓名" || prefix[j] == "班座"){
                 wks.cell(i + 1 + startRow, j + 1) = s.getStr(prefix[j]);
             }
-            else
-                wks.cell(i + 1 + startRow, j + 1) = s.get(prefix[j]);
-        }
-        for(int j = 0; j < courses.size(); j ++){
-            if(s.has(courses[j])){
-                wks.cell(i + 1 + startRow, 2 * j + 1 + prefix.size()) = s.get(courses[j]);
-                wks.cell(i + 1 + startRow, 2 * j + 2 + prefix.size()) = s.get(keys[j]);
-            }
+            else if(students[i].has(prefix[j]))
+                wks.cell(i + 1 + startRow, j + 1) = formatFloat(s.get(prefix[j]));
         }
     }
 }
 
-void _Sheet4(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int& startRow,
-    vector<int>&pivot, string key, set<int> &klass){
-    vector<Student> students;
-    for(auto&s : _students){
-        if(klass.find(int(s.get("班级")))!= klass.end()){
-            students.push_back(s);
-        }
-    }
-
-    map<int, int> m;
-    vector<int> _idx;
-    for(auto &s: students){
-        if(s.has("班级")){
-            int id = s.get("班级");
-            if(m.find(id) == m.end()){
-                _idx.push_back(id);
-                m[id] = m.size();
-            }
-        }
-    }
-    for(int i = 0; i < m.size(); i ++){
-        int classID = _idx[i];
-        vector<int> counts(pivot.size() + 1, 0);
-        for(auto &s: students){
-            if(int(s.get("班级")) != classID || !s.has(key)) continue;
-            float score = s.get(key);
-            for(int j = 0; j < pivot.size(); j ++){
-                if(j == 0 && score >= pivot[0]) counts[0] += 1;
-                else if(j == pivot.size()-1 && score < pivot[pivot.size() - 1]) counts[pivot.size()] += 1;
-                else if(score < pivot[j] && score >= pivot[j + 1]){
-                    counts[j + 1] += 1;
-                }
-            }
-        }
-        for(int j = 0; j < counts.size(); j ++ ){
-            wks.cell(i + startRow, j + 2) = counts[j];
-        }
-    }
-    for(int i = 0; i < m.size(); i ++){
-        wks.cell(i + startRow, 1) = _idx[i];
-    }
-    startRow += m.size();
-}
-void Sheet4(OpenXLSX::XLWorksheet wks, vector<Student>& students, int& startRow){
-    vector<int> pivot1 = {650, 640};
-    for(int i = 1; ;i++){
-        if(pivot1[i] > 400){
-            pivot1.push_back(pivot1[i] - 20);
-        }
-        else break;
-    }
-    wks.cell(startRow, 1) = "班级";
-    for(int i = 0; i < pivot1.size(); i++){
-        string field;
-        if(i == 0) field = to_string(pivot1[i]) + "以上";
-        else{
-            field = to_string(pivot1[i]) + "-" + to_string(pivot1[i - 1] - 1);
-        }
-        wks.cell(startRow, i + 2) = field;
-    }
-    wks.cell(startRow, pivot1.size() + 2) = to_string(pivot1[pivot1.size() - 1]) + "以下";
-    string key1 = "物理总分";
-    set<int> klass1;
-    for(int i = 0; i<=13; i ++) klass1.insert(i);
-    startRow += 1;
-    _Sheet4(wks, students, startRow, pivot1, "物理总分", klass1);
-    set<int> klass2 = {14,15,16,17,18};
-    _Sheet4(wks, students, startRow, pivot1, "历史总分", klass2);
-    startRow += 1;
-}
-void _Sheet5(OpenXLSX::XLWorksheet wks, vector<Student>& _students, int& startRow,
-    vector<int>&pivot, string key, set<int> &klass){
-    vector<Student> students;
-    for(auto&s : _students){
-        if(klass.find(int(s.get("班级")))!= klass.end()){
-            students.push_back(s);
-        }
-    }
-
-    map<int, int> m;
-    vector<int> _idx;
-    for(auto &s: students){
-        if(s.has("班级")){
-            int id = s.get("班级");
-            if(m.find(id) == m.end()){
-                _idx.push_back(id);
-                m[id] = m.size();
-            }
-        }
-    }
-    for(int i = 0; i < m.size(); i ++){
-        int classID = _idx[i];
-        vector<int> counts(pivot.size() - 1, 0);
-        for(auto &s: students){
-            if(int(s.get("班级")) != classID || !s.has(key)) continue;
-            float score = s.get(key);
-            for(int j = 0; j < pivot.size() - 1; j ++){
-                if(score > pivot[j] && score <= pivot[j + 1]){
-                    counts[j] += 1;
-                }
-            }
-        }
-        for(int j = 0; j < counts.size(); j ++ ){
-            wks.cell(i + startRow, j + 1) = counts[j];
-        }
-    }
-    for(int i = 0; i < m.size(); i ++){
-        wks.cell(i + startRow, 1) = _idx[i];
-    }
-    startRow += m.size();
-}
-
-void Sheet5(OpenXLSX::XLWorksheet wks, vector<Student>& students, int& startRow){
-    vector<int> pivot1 = {0, 20, 50, 100, 150, 200, 250, 300, 350, 400, 500, 600, 700};
-    vector<int> pivot2 = {0, 20, 50, 100, 150, 200, 250};
-    set<int> klass1;
-    for(int i = 0; i<=13; i ++) klass1.insert(i);
-    set<int> klass2 = {14,15,16,17,18};
-
-    wks.cell(startRow, 1) = "班级";
-    for(int i = 0; i < pivot1.size() - 1; i++){
-        string field;
-        field = to_string(pivot1[i] + 1) + "-" + to_string(pivot1[i + 1] );
-        wks.cell(startRow, i + 2) = field;
-    }
-    startRow += 1;
-    _Sheet5(wks, students, startRow, pivot1, "物类排", klass1);
-    _Sheet5(wks, students, startRow, pivot2, "历类排", klass2);
-}
-int main(){
+void Document(string srcPath, string sheet,string targetPath, int type = 1){
     XLDocument doc;
-    doc.open("tables/grade2.xlsx");
+
+    doc.open(srcPath);
     auto workbook = doc.workbook();
-    auto wks = workbook.worksheet("原始分");
+    auto wks = workbook.worksheet(sheet);
     
     XLDocument doc2;
-    doc2.open("tables/result.xlsx");
+    doc2.create(targetPath);
+    doc2.open(targetPath);
     auto workbook2 = doc2.workbook();
-    if(!workbook2.sheetExists("Sheet1")){
-        workbook2.addWorksheet("Sheet1");
-    }
+
     vector<Student> students;
-    load(wks, students);
+    vector<Klass> klass;
+    map<string, Lecture> lecture;
+    
+    load(wks, students, lecture, klass, type);
+    vector<string> courses = {"语文","数学","英语",
+                            "物理","历史",
+                            "化学","地理","政治", "生物","语数英",
+                            "物理总分", "历史总分"};
+    auto wks1 = getSheet(doc2, "Sheet1");
+    Sheet1(wks1, students);
+    auto wks2 = getSheet(doc2, "物理类排名");
+    Sheet2(wks2, students, 1, 1);
+    auto wks3 = getSheet(doc2, "历史类排名");
+    Sheet2(wks3, students, 1, 2);
+    auto wks4 = getSheet(doc2, "各科总揽");
+    Sheet3(wks4, lecture);
+    for(auto &course: courses){
+        auto wks5 = getSheet(doc2, course);
+        int row = 1;
+        Sheet4(wks5, course, students, lecture,  klass, row);
+    }
+    doc2.save();
+    doc2.close();
+}
+int main(){
+    Document("grade.xlsx", "原始分", "result1.xlsx", 1);
+    Document("grade.xlsx", "原始分", "result2.xlsx", 2);
+    
     // for(auto s: students){
     //     cout << s.get("班级") << " ";
     // }
     //cout << students.size();
-    
-    for(auto &s: students){
-        if(s.has("历史")){
-            s.info["历史总分"] = s.get("总分");
-        }
-        if(s.has("物理")){
-            s.info["物理总分"] = s.get("总分");
-        }
-    }
-    vector<string> courses = {"语文","数学","英语",
-                            "物理","历史",
-                            "化学","地理","政治", "生物",
-                            "物理总分", "历史总分"};
-    vector<string> keys = {"语排","数排","英排",
-                            "物排","历排",
-                            "化排","地排","政排", "生排",
-                            "物类排", "历类排"};
-    for(int i = 0 ; i< courses.size(); i++){
-        getRank(students, courses[i], keys[i]);
-    }
-    //auto wks2 = getSheet(doc2, "Sheet1");
-    //Sheet1(wks2, students);
+    // auto wks2 = getSheet(doc2, "Sheet1");
+    // Sheet1(wks2, students);
     // auto wks3 = getSheet(doc2, "Sheet2");
     // Sheet2(wks3, students, 1);
     // auto wks4 = getSheet(doc2, "Sheet3");
     // Sheet3(wks4, students, 1);
 
-    // auto wks4 = getSheet(doc2, "Sheet4");
-    // int row = 1;
-    // Sheet4(wks4, students, row);
-    // Sheet5(wks4, students, row);
-    // string key3 = "物类排";
-    // vector<float> pivot2 = {0, 20, 50, 100, 150, 200, 250, 300, 350, 400, 500, 600, 700};
-    // Sheet5(wks4, students, row, pivot2, key3, klass1);
-    // row+= 1;
-    // string key4 = "历类排";
-    // vector<float> pivot3 = {0, 20, 50, 100, 150, 200, 250};
-    // Sheet5(wks4, students, row, pivot3, key4, klass2);
+    //  auto wks5 = getSheet(doc2, "Sheet4");
+    //  int row = 1;
+    //  Sheet4(wks5, students, row);
+    //  Sheet5(wks5, students, row);
 
-    doc2.save();
-    doc2.close();
+    //auto wks7 = getSheet(doc2, "sheet7");
+    //Sheet7(wks7, lecture);
 }
